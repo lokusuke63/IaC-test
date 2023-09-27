@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Create Application load-balancer
+Parameters:
+  SystemName:
+    Description: What do you plan to name this system ?(e.g. WebSystem)
+    Type: String
+  Environment:
+    Description: what environment will it be used(choose one) ?
+    Type: String
+    AllowedValues:
+      - prod
+      - test
+      - dev
+  SubnetA:
+    Type: AWS::EC2::Subnet::Id
+  SubnetB:
+    Type: AWS::EC2::Subnet::Id
+  S3BucketForALBlogs:
+    Type: String
+    Description: type the bucket name for access logs of application loadbalancer
+    Default: rails-test-alb-logs
+
+Resources:
+  #ALBの作成
+  TestALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      LoadBalancerAttributes: 
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !Ref S3BucketForALBlogs
+        - Key: access_logs.s3.prefix
+          Value: !Sub 'alb/${AWS::StackName}'
+      IpAddressType: ipv4
+      Name: !Sub ${SystemName}-${Environment}-alb
+      Scheme: internet-facing
+      SecurityGroups: 
+        - !ImportValue TestSG-TestALBSecurityGroupID
+      Subnets: 
+        - !Ref SubnetA
+        - !Ref SubnetB
+      Tags:
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-alb
+      Type: application
+  #ターゲットグループの作成
+  TestALBTarget:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties: 
+      #IpAddressType: String
+      #ProtocolVersion: String
+      #TargetGroupAttributes: 
+      #  - TargetGroupAttribute
+      #TargetType: String
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 5
+      UnhealthyThresholdCount: 2
+      Matcher: 
+        HttpCode: 200
+      Name: !Sub ${SystemName}-${Environment}-alb-tg
+      Port: 80
+      Protocol: HTTP
+      Tags:
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-alb-tg
+      Targets: 
+        - Id: !ImportValue TestEC2-ec2-instance-id
+          Port: 80
+      VpcId: !ImportValue TestVPC-VpcID
+  #リスナーを作成して、ターゲットグループとALBを紐づけ
+  TestALBLisner:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      #Certificates: 
+      #  - Certificate
+      #SslPolicy: String
+      DefaultActions: 
+        - TargetGroupArn: !Ref TestALBTarget
+          Type: forward
+      LoadBalancerArn: !Ref TestALB
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  TestALB:
+    Description: DNSName of "TestALB"
+    Value: !GetAtt  TestALB.DNSName
+    Export: 
+      Name: !Sub ${AWS::StackName}-VpcID
+

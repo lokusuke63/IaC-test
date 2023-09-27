@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: create vpc and subnet
+
+#パラメータ入力用
+Parameters:
+  SystemName:
+    Description: What do you plan to name this system ?(e.g. WebSystem)
+    Type: String
+    Default: rt
+  
+  Environment:
+    Description: what environment will it be used(choose one) ?
+    Type: String
+    AllowedValues:
+      - prod
+      - test
+      - dev
+    Default: test
+
+  YourHomeIP:
+    Description: where will you SSH from ?(type your CIDR)
+    Type: String
+    Default: 0.0.0.0/0
+
+#公開webサーバー用セキュリティグループ(http,puma,ssh)
+Resources:
+  TestWebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: security group for the http server
+      SecurityGroupIngress: 
+        -   CidrIp: "0.0.0.0/0"
+            Description: for http connection
+            FromPort: 80
+            ToPort: 80
+            IpProtocol: tcp
+        -   CidrIp: !Ref YourHomeIP
+            Description: for puma connection
+            FromPort: 3000
+            ToPort: 3000
+            IpProtocol: tcp
+      Tags: 
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-web-sg
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${SystemName}-${Environment}-vpc-VpcId
+
+  TestSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: security group for the ssh connection
+      SecurityGroupIngress: 
+        -   CidrIp: !Ref YourHomeIP
+            Description: for http connection
+            FromPort: 22
+            ToPort: 22
+            IpProtocol: tcp
+      Tags: 
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-ssh-sg
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${SystemName}-${Environment}-vpc-VpcId
+
+#DBサーバー用セキュリティグループ(mysql)
+  TestDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: security group for the db server
+      GroupName: Test-db-sg
+      SecurityGroupIngress: 
+        -   SourceSecurityGroupId: !GetAtt TestWebSecurityGroup.GroupId
+            Description: for db connection 
+            FromPort: 3306
+            ToPort: 3306
+            IpProtocol: tcp
+      Tags: 
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-db-sg
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${SystemName}-${Environment}-vpc-VpcId
+
+#ALB用セキュリティグループ（HTTP）
+  TestALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: security group for the application loadbalancer
+      SecurityGroupIngress: 
+        -   CidrIp: "0.0.0.0/0"
+            Description: for http connection
+            FromPort: 80
+            ToPort: 80
+            IpProtocol: tcp
+      Tags: 
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-alb-sg
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${SystemName}-${Environment}-vpc-VpcId
+
+Outputs:
+  TestWebSecurityGroup:
+    Description: Information about the "TestWebSecurityGroup"
+    Value: !GetAtt TestWebSecurityGroup.GroupId
+    Export: 
+      Name: !Sub ${AWS::StackName}-TestWebSecurityGroupId
+
+  TestSSHSecurityGroup:
+    Description: Information about the "TestSSHSecurityGroup"
+    Value: !GetAtt TestSSHSecurityGroup.GroupId
+    Export: 
+      Name: !Sub ${AWS::StackName}-TestSSHSecurityGroupId
+
+  TestDBSecurityGroup:
+    Description: Information about the "TestDBSecurityGroup"
+    Value: !GetAtt TestDBSecurityGroup.GroupId
+    Export: 
+      Name: !Sub ${AWS::StackName}-TestDBSecurityGroupId
+
+  TestALBSecurityGroup:
+    Description: Information about the "TestALBSecurityGroup"
+    Value: !GetAtt TestALBSecurityGroup.GroupId
+    Export: 
+      Name: !Sub ${AWS::StackName}-TestALBSecurityGroupId
+
+

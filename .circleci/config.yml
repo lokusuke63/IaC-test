@@ -1,0 +1,103 @@
+version: 2.1
+orbs:
+  python: circleci/python@2.0.3
+  aws-cli: circleci/aws-cli@3.1
+
+jobs:
+  ## check CFn templates
+  cfn-lint:
+    executor: python/default
+    steps:
+      - checkout
+      - run: pip install cfn-lint
+      - run:
+          name: run cfn-lint
+          command: |
+            cfn-lint -i W3002 -t cloudformation/*.yml
+  ## assume-role and create stacks
+  aws-oidc-create-stack:
+    #### define parameters #######################################################
+    parameters:
+      profile-name:
+        description: using it when you run aws-cli command
+        type: string 
+        default: rt-oidc-profile
+      role-session-name:
+        description: using it when circleci assume role
+        type: string 
+        default: rt-circleci-session
+      system-name:
+        type: string 
+        description: using it when CloudFormation creates the stack
+        default: rt
+      environment:
+        type: enum
+        description: using it when CloudFormation creates the stack
+        enum: ["dev", "test", "prod"]
+      CidrBlock:
+        type: string 
+        description: using it when CloudFormation creates the stack
+        default: 10.4.0.0/16
+      vpc-template:
+        description: CloudFormation vpc template file path
+        type: string
+        default: cloudformation/TestVPC.yml
+      sg-template:
+        description: CloudFormation sg template file path
+        type: string
+        default: cloudformation/TestSG.yml
+      home-ip:
+        description: where can ssh to ec2 instance(for security-group)
+        type: string
+        default: 0.0.0.0/0
+    #############################################################################
+    docker:
+      - image: cimg/aws:2023.04
+    steps:
+      - checkout
+      # run aws-cli/setup with the installed orb
+      # you need parameter below in steps "aws-cli/setup" for OIDC token  
+      - aws-cli/setup:
+          # required parameter
+          role-arn: $AWS_ROLE_ARN  # need amazon resource name (using enviroment settings in circleci) for assume-role with OIDC token
+          # optional parameters
+          aws-region: AWS_DEFAULT_REGION   # need parameter's name
+          profile-name: <<parameters.profile-name>>
+          role-session-name: <<parameters.role-session-name>>
+          session-duration: "1800"
+      - run:
+          name: Create vpc stack
+          command: |
+            aws cloudformation deploy \
+            --stack-name <<parameters.system-name>>-<<parameters.environment>>-vpc \
+            --template <<parameters.vpc-template>> \
+            --profile <<parameters.profile-name>> \
+            --parameter-overrides ParameterKey=SystemName,ParameterValue=<<parameters.system-name>> \
+                                  ParameterKey=Environment,ParameterValue=<<parameters.environment>> \
+                                  ParameterKey=CidrBlock,ParameterValue=<<parameters.CidrBlock>> \
+            --no-fail-on-empty-changeset
+      - run:
+          name: Create security-group stack
+          command: |
+            aws cloudformation deploy \
+            --stack-name <<parameters.system-name>>-<<parameters.environment>>-sg \
+            --template <<parameters.sg-template>> \
+            --profile <<parameters.profile-name>> \
+            --parameter-overrides ParameterKey=SystemName,UsePreviousValue=true \
+                                  ParameterKey=Environment,UsePreviousValue=true \
+                                  ParameterKey=YourHomeIP,ParameterValue=<<parameters.home-ip>> \
+            --no-fail-on-empty-changeset
+
+workflows:
+  cfn-test:
+    jobs:
+      - cfn-lint
+      - aws-oidc-create-stack:
+          # must use a valid CircleCI context if you need OIDC token
+          context: aws
+          requires:
+            - cfn-lint
+          # if you need parameters, you can change them below.(if you dont, CircleCI will use default parameters)
+          system-name: rt
+          environment: test
+          CidrBlock: 10.4.0.0/16

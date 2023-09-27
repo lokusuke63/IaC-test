@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: 2010-09-09
+#Description: ---
+#Metadata: 
+#Mappings: 
+#Conditions: 
+Parameters: 
+  SystemName:
+    Description: What do you plan to name this system ?(e.g. WebSystem)
+    Type: String
+  Environment:
+    Description: what environment will it be used(you can choose one) ?
+    Type: String
+    AllowedValues:
+      - prod
+      - test
+      - dev
+  SubnetGroup:
+    Description: you can choose two subnets for db subnet-group
+    Type: List<AWS::EC2::Subnet::Id> #for db subnet-group
+  InstanceType:
+    Default: db.t2.micro
+    Type: String
+    AllowedValues:
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+  DBStorageSize:
+    Default: '20'
+    Type: String
+
+Resources: 
+  MyDBSecret:
+    Type: AWS::SecretsManager::Secret  #DB password uses random string(12 characters) SecretManager generated
+    Properties:
+      Name: mydbsecret
+      Description: My database secret
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "myadmin", "password": "{{my-password-parameter}}"}'
+        GenerateStringKey: password
+        PasswordLength: 12
+        ExcludeCharacters: '"@/\'
+      Tags:
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-db-secret
+
+  MyDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: test-subnetgroup
+      DBSubnetGroupName: !Sub ${SystemName}-${Environment}-db-subnetgroup
+      SubnetIds: !Ref SubnetGroup
+      Tags:
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-db-subnetgroup
+
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: !Ref DBStorageSize
+      DBInstanceClass: !Ref InstanceType
+      DBInstanceIdentifier: rt-test-database
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      VPCSecurityGroups: 
+        - !ImportValue TestSG-TestDBSecurityGroupID
+      DBName: rt_test_database
+      Engine: mysql
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref MyDBSecret, ':SecretString:username}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref MyDBSecret, ':SecretString:password}}' ]]
+      Tags:
+        - Key: environment
+          Value: !Sub ${Environment}
+        - Key: Name
+          Value: !Sub ${SystemName}-${Environment}-rds
+
+  MySecretRDSInstanceAttachment: # link the db information to SecretManager
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref MyDBSecret
+      TargetId: !Ref MyDBInstance
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  MyDBSecret:
+    Description: Information about the secret for db instance
+    Value: !Ref MyDBSecret
+    Export: 
+      Name: !Sub ${SystemName}-${Environment}-Secret-Arn

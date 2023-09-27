@@ -1,0 +1,31 @@
+version: 2.1
+orbs:
+  # import CircleCI's aws-cli orb
+  aws-cli: circleci/aws-cli@3.1
+jobs:
+  aws-example:
+    docker:
+      - image: cimg/aws:2023.04
+    steps:
+      - checkout
+      # run the aws-cli/setup command from the orb
+      # you need parameter below in steps "aws-cli/setup" for OIDC  
+      - aws-cli/setup:
+          # required parameter
+          role-arn: $AWS_ROLE_ARN
+          # optional parameters
+          aws-region: AWS_DEFAULT_REGION   
+          profile-name: "OIDC-PROFILE"
+          role-session-name: "circleci-session"
+          session-duration: "1800"
+      - run:
+          name: aws-s3-list-bucket
+          command: |
+            # must use same profile specified in the step above
+            aws s3 ls --profile "OIDC-PROFILE"
+workflows:
+  OIDC-with-AWS:
+    jobs:
+      - aws-example:
+          # must use a valid CircleCI context
+          context: aws
