@@ -98,6 +98,6 @@ workflows:
           requires:
             - cfn-lint
           # if you need parameters, you can change them below.(if you dont, CircleCI will use default parameters)
-          system-name: rt
-          environment: test
-          CidrBlock: 10.4.0.0/16
+          system-name: suz
+          environment: dev
+          CidrBlock: 10.1.0.0/16

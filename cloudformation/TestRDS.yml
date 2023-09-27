@@ -66,7 +66,7 @@ Resources:
       DBInstanceIdentifier: rt-test-database
       DBSubnetGroupName: !Ref MyDBSubnetGroup
       VPCSecurityGroups: 
-        - !ImportValue TestSG-TestDBSecurityGroupID
+        - Fn::ImportValue: !Sub ${SystemName}-${Environment}-sg-TestDBSecurityGroupId
       DBName: rt_test_database
       Engine: mysql
       MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref MyDBSecret, ':SecretString:username}}' ]]
